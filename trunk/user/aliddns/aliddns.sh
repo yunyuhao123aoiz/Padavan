@@ -1,6 +1,16 @@
-#!/bin/bash
+#!/bin/sh
 #copyright by hiboy
-source /etc/storage/script/init.sh
+#source /etc/storage/init.sh
+#ACTION=$1
+export PATH='/etc/storage/bin:/tmp/script:/etc/storage/script:/opt/usr/sbin:/opt/usr/bin:/opt/sbin:/opt/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
+export LD_LIBRARY_PATH=/lib:/opt/lib
+ACTION=$1
+scriptfilepath=$(cd "$(dirname "$0")"; pwd)/$(basename $0)
+#echo $scriptfilepath
+scriptpath=$(cd "$(dirname "$0")"; pwd)
+#echo $scriptpath
+scriptname=$(basename $0)
+
 aliddns_enable=`nvram get aliddns_enable`
 [ -z $aliddns_enable ] && aliddns_enable=0 && nvram set aliddns_enable=0
 if [ "$aliddns_enable" != "0" ] ; then
@@ -46,7 +56,7 @@ fi
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep aliddns)" ]  && [ ! -s /tmp/script/_aliddns ]; then
 	mkdir -p /tmp/script
-	{ echo '#!/bin/bash' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_aliddns
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_aliddns
 	chmod 777 /tmp/script/_aliddns
 fi
 
@@ -91,7 +101,6 @@ aliddns_get_status () {
 A_restart=`nvram get aliddns_status`
 B_restart="$aliddns_enable$aliddns_interval$aliddns_ak$aliddns_sk$aliddns_domain$aliddns_name$aliddns_domain2$aliddns_name2$aliddns_domain6$aliddns_name6$aliddns_ttl$(cat /etc/storage/ddns_script.sh | grep -v '^#' | grep -v "^$")"
 B_restart=`echo -n "$B_restart" | md5sum | sed s/[[:space:]]//g | sed s/-//g`
-cut_B_re
 if [ "$A_restart" != "$B_restart" ] ; then
 	nvram set aliddns_status=$B_restart
 	needed_restart=1
@@ -121,11 +130,7 @@ fi
 aliddns_keep () {
 aliddns_start
 logger -t "【AliDDNS动态域名】" "守护进程启动"
-cat >> "/tmp/script/_opt_script_check" <<-OSC
-[ -z "\`pidof Sh42_aliddns.sh\`" ] && nvram set aliddns_status=00 && logger -t "【aliddns】" "重新启动" && eval "$scriptfilepath &" && sed -Ei '/【aliddns】|^$/d' /tmp/script/_opt_script_check # 【aliddns】
-OSC
 while true; do
-sleep 43
 sleep $aliddns_interval
 [ ! -s "`which curl`" ] && aliddns_restart
 #nvramshow=`nvram showall | grep '=' | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
@@ -137,31 +142,30 @@ fi
 done
 }
 
+kill_ps () {
+
+COMMAND="$1"
+if [ ! -z "$COMMAND" ] ; then
+	eval $(ps -w | grep "$COMMAND" | grep -v $$ | grep -v grep | awk '{print "kill "$1";";}')
+	eval $(ps -w | grep "$COMMAND" | grep -v $$ | grep -v grep | awk '{print "kill -9 "$1";";}')
+fi
+if [ "$2" == "exit0" ] ; then
+	exit 0
+fi
+}
+
 aliddns_close () {
-sed -Ei '/【aliddns】|^$/d' /tmp/script/_opt_script_check
-kill_ps "$scriptname keep"
+
 kill_ps "/tmp/script/_aliddns"
 kill_ps "_aliddns.sh"
 kill_ps "$scriptname"
+
 }
 
 aliddns_start () {
-check_webui_yes
-curltest=`which curl`
-if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-	logger -t "【AliDDNS动态域名】" "找不到 curl ，安装 opt mini 程序"
-	/etc/storage/script/Sh01_mountopt.sh opt_mini_wget
-	initopt
-	curltest=`which curl`
-	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		logger -t "【AliDDNS动态域名】" "找不到 curl ，需要手动安装 opt 后输入[opkg update; opkg install curl]安装"
-		logger -t "【AliDDNS动态域名】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && aliddns_restart x
-	else
-		aliddns_restart o
-	fi
-fi
 IPv6=0
 if [ "$aliddns_domain"x != "x" ] && [ "$aliddns_name"x != "x" ] ; then
+	sleep 1
 	timestamp=`date -u "+%Y-%m-%dT%H%%3A%M%%3A%SZ"`
 	aliddns_record_id=""
 	domain="$aliddns_domain"
@@ -177,8 +181,8 @@ if [ "$aliddns_domain2"x != "x" ] && [ "$aliddns_name2"x != "x" ] ; then
 	arDdnsCheck $aliddns_domain2 $aliddns_name2
 fi
 if [ "$aliddns_domain6"x != "x" ] && [ "$aliddns_name6"x != "x" ] ; then
-	sleep 1
 	IPv6=1
+	sleep 1
 	timestamp=`date -u "+%Y-%m-%dT%H%%3A%M%%3A%SZ"`
 	aliddns_record_id=""
 	domain="$aliddns_domain6"
@@ -186,44 +190,15 @@ if [ "$aliddns_domain6"x != "x" ] && [ "$aliddns_name6"x != "x" ] ; then
 	arDdnsCheck $aliddns_domain6 $aliddns_name6
 fi
 
-source /etc/storage/ddns_script.sh
-while read line
-do
-	line=`echo $line | cut -d '#' -f1`
-	line=$(echo $line)
-	[ -z "$line" ] && continue
-	sleep 1
-	IPv6=1
-	timestamp=`date -u "+%Y-%m-%dT%H%%3A%M%%3A%SZ"`
-	IPv6_neighbor=1
-	aliddns_record_id=""
-	name="$(echo "$line" | cut -d '@' -f1)"
-	domain="$(echo "$line" | cut -d '@' -f2)"
-	inf_MAC="$(echo "$line" | cut -d '@' -f3 | tr 'A-Z' 'a-z')"
-	inf_match="$(echo "$line" | cut -d '@' -f4)"
-	inf_v_match="$(echo "$line" | cut -d '@' -f5)"
-	[ -z "$inf_v_match" ] && inf_v_match="inf_v_match"
-	inet6_neighbor="$(echo "$line" | cut -d '@' -f6)"
-	inet6_neighbor=$(echo $inet6_neighbor)
-	if [ -z "$inet6_neighbor" ] ; then
-		ip -f inet6 neighbor show > /tmp/ip6_neighbor.log
-		inet6_neighbor="$(cat /tmp/ip6_neighbor.log | grep "$inf_MAC" | grep -v "$inf_v_match" | grep "$inf_match" | awk -F ' ' '{print $1}' | sed -n '1p')"
-	fi
-	[ ! -z "$inet6_neighbor" ] && arDdnsCheck $domain $name
-	IPv6_neighbor=0
-done < /tmp/ip6_ddns_inf
-
 }
 
 urlencode() {
 	# urlencode <string>
 	out=""
-	read S
-	for i in $(seq 0 $(($(echo -n "$S" |awk -F "" '{print NF}') - 1)) )
+	while read -n1 c
 	do
-		c="${S:$i:1}"
-		case "$c" in
-			[-_.~a-zA-Z0-9]) out="$out$c" ;;
+		case $c in
+			[a-zA-Z0-9._-]) out="$out$c" ;;
 			*) out="$out`printf '%%%02X' "'$c"`" ;;
 		esac
 	done
@@ -237,8 +212,7 @@ enc() {
 send_request() {
 	args="AccessKeyId=$aliddns_ak&Action=$1&Format=json&$2&Version=2015-01-09"
 	hash=$(echo -n "GET&%2F&$(enc "$args")" | openssl dgst -sha1 -hmac "$aliddns_sk&" -binary | openssl base64)
-	curl -L    -s "http://alidns.aliyuncs.com/?$args&Signature=$(enc "$hash")"
-	sleep 1
+	curl -L -s "http://alidns.aliyuncs.com/?$args&Signature=$(enc "$hash")"
 }
 
 get_recordid() {
@@ -305,7 +279,6 @@ esac
 		return 0
 		;;
 	*)
-		aliddns_record_id=""
 		echo "Get Record Info Failed!"
 		#logger -t "【AliDDNS动态域名】" "获取记录信息失败！"
 		return 1
@@ -328,21 +301,21 @@ done
 killall nslookup
 if [ -s /tmp/arNslookup/$$ ] ; then
 cat /tmp/arNslookup/$$ | sort -u | grep -v "^$"
+rm -f /tmp/arNslookup/$$
 else
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		Address="`wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- http://119.29.29.29/d?dn=$1`"
+		Address="`wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`"
 		if [ $? -eq 0 ]; then
 		echo "$Address" |  sed s/\;/"\n"/g | sed -n '1p' | grep -E -o '([0-9]+\.){3}[0-9]+'
 		fi
 	else
-		Address="`curl --user-agent "$user_agent" -s http://119.29.29.29/d?dn=$1`"
+		Address="`curl -k -s http://119.29.29.29/d?dn=$1`"
 		if [ $? -eq 0 ]; then
 		echo "$Address" |  sed s/\;/"\n"/g | sed -n '1p' | grep -E -o '([0-9]+\.){3}[0-9]+'
 		fi
 	fi
 fi
-rm -f /tmp/arNslookup/$$
 }
 
 arNslookup6() {
@@ -357,21 +330,8 @@ done
 killall nslookup
 if [ -s /tmp/arNslookup/$$ ] ; then
 	cat /tmp/arNslookup/$$ | sort -u | grep -v "^$"
-else
-	curltest=`which curl`
-	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		Address="$(wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- --header 'accept: application/dns-json' 'https://cloudflare-dns.com/dns-query?name='"$1"'&type=AAAA')"
-		if [ $? -eq 0 ]; then
-		echo "$Address" | grep -Eo "data\":\"[^\"]+" | sed "s/data\":\"//g" | sed -n '1p'
-		fi
-	else
-		Address="$(curl --user-agent "$user_agent" -s -H 'accept: application/dns-json' 'https://cloudflare-dns.com/dns-query?name='"$1"'&type=AAAA')"
-		if [ $? -eq 0 ]; then
-		echo "$Address" | grep -Eo "data\":\"[^\"]+" | sed "s/data\":\"//g" | sed -n '1p'
-		fi
-	fi
+	rm -f /tmp/arNslookup/$$
 fi
-rm -f /tmp/arNslookup/$$
 }
 
 # 更新记录信息
@@ -395,7 +355,7 @@ esac
 	fi
 I=3
 aliddns_record_id=""
-while [ -z "$aliddns_record_id" ] ; do
+while [ "$aliddns_record_id" = "" ] ; do
 	I=$(($I - 1))
 	[ $I -lt 0 ] && break
 	# 获得记录ID
@@ -405,7 +365,7 @@ while [ -z "$aliddns_record_id" ] ; do
 	sleep 1
 done
 	timestamp=`date -u "+%Y-%m-%dT%H%%3A%M%%3A%SZ"`
-if [ -z "$aliddns_record_id" ] ; then
+if [ "$aliddns_record_id" = "" ] ; then
 	aliddns_record_id=`add_record | get_recordid`
 	echo "added record $aliddns_record_id"
 	logger -t "【AliDDNS动态域名】" "添加的记录  $aliddns_record_id"
@@ -415,7 +375,7 @@ else
 	logger -t "【AliDDNS动态域名】" "更新的记录  $aliddns_record_id"
 fi
 # save to file
-if [ -z "$aliddns_record_id" ] ; then
+if [ "$aliddns_record_id" = "" ] ; then
 	# failed
 	nvram set aliddns_last_act="`date "+%Y-%m-%d %H:%M:%S"`   更新失败"
 	logger -t "【AliDDNS动态域名】" "更新失败"
@@ -445,42 +405,41 @@ arDdnsCheck() {
 	if [ "$hostIP"x = "x"  ] ; then
 		curltest=`which curl`
 		if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-			[ "$hostIP"x = "x"  ] && hostIP=`wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
-			[ "$hostIP"x = "x"  ] && hostIP=`wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
-			[ "$hostIP"x = "x"  ] && hostIP=`wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "http://myip.ipip.net" | grep "当前 IP" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
-			[ "$hostIP"x = "x"  ] && hostIP=`wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "http://ddns.oray.com/checkip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
+			[ "$hostIP"x = "x"  ] && hostIP=`wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
+			[ "$hostIP"x = "x"  ] && hostIP=`wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
+			[ "$hostIP"x = "x"  ] && hostIP=`wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- "https://www.ipip.net/" | grep "IP地址" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
+			[ "$hostIP"x = "x"  ] && hostIP=`wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- "http://pv.sohu.com/cityjson?ie=utf-8" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
 		else
-			[ "$hostIP"x = "x"  ] && hostIP=`curl -L --user-agent "$user_agent" -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
-			[ "$hostIP"x = "x"  ] && hostIP=`curl -L --user-agent "$user_agent" -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
-			[ "$hostIP"x = "x"  ] && hostIP=`curl -L --user-agent "$user_agent" -s "http://myip.ipip.net" | grep "当前 IP" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
-			[ "$hostIP"x = "x"  ] && hostIP=`curl -L --user-agent "$user_agent" -s http://ddns.oray.com/checkip | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
+			[ "$hostIP"x = "x"  ] && hostIP=`curl -L -k -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
+			[ "$hostIP"x = "x"  ] && hostIP=`curl -L -k -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
+			[ "$hostIP"x = "x"  ] && hostIP=`curl -L -k -s "https://www.ipip.net" | grep "IP地址" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
+			[ "$hostIP"x = "x"  ] && hostIP=`curl -L -k -s http://pv.sohu.com/cityjson?ie=utf-8 | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1`
 		fi
 		if [ "$hostIP"x = "x"  ] ; then
 			logger -t "【AliDDNS动态域名】" "错误！获取目前 IP 失败，请在脚本更换其他获取地址"
 			return 1
 		fi
 	fi
-	echo "Updating Domain: $2.$1"
-	echo "hostIP: $hostIP"
+	echo "Updating Domain: ${2}.${1}"
+	echo "hostIP: ${hostIP}"
 	lastIP=$(arDdnsInfo "$1 $2")
 	if [ $? -eq 1 ]; then
-		[ "$IPv6" != "1" ] && lastIP=$(arNslookup "$2.$1")
-		[ "$IPv6" = "1" ] && lastIP=$(arNslookup6 "$2.$1")
+		[ "$IPv6" != "1" ] && lastIP=$(arNslookup "${2}.${1}")
+		[ "$IPv6" = "1" ] && lastIP=$(arNslookup6 "${2}.${1}")
 	fi
-	echo "lastIP: $lastIP"
+	echo "lastIP: ${lastIP}"
 	if [ "$lastIP" != "$hostIP" ] ; then
-		logger -t "【AliDDNS动态域名】" "开始更新 $2.$1 域名 IP 指向"
-		logger -t "【AliDDNS动态域名】" "目前 IP: $hostIP"
-		logger -t "【AliDDNS动态域名】" "上次 IP: $lastIP"
-		aliddns_record_id=""
+		logger -t "【AliDDNS动态域名】" "开始更新 ${2}.${1} 域名 IP 指向"
+		logger -t "【AliDDNS动态域名】" "目前 IP: ${hostIP}"
+		logger -t "【AliDDNS动态域名】" "上次 IP: ${lastIP}"
 		sleep 1
-		postRS=$(arDdnsUpdate "$1" "$2")
+		postRS=$(arDdnsUpdate $1 $2)
 		if [ $? -eq 0 ]; then
-			echo "postRS: $postRS"
+			echo "postRS: ${postRS}"
 			logger -t "【AliDDNS动态域名】" "更新动态DNS记录成功！"
 			return 0
 		else
-			echo $postRS
+			echo ${postRS}
 			logger -t "【AliDDNS动态域名】" "更新动态DNS记录失败！请检查您的网络。"
 			if [ "$IPv6" = "1" ] ; then 
 				IPv6=0
@@ -490,19 +449,11 @@ arDdnsCheck() {
 			return 1
 		fi
 	fi
-	echo $lastIP
+	echo ${lastIP}
 	echo "Last IP is the same as current IP!"
 	return 1
 }
 
-initopt () {
-optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
-[ ! -z "$optPath" ] && return
-if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	{ echo '#!/bin/bash' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
-fi
-
-}
 
 initconfig () {
 
@@ -514,45 +465,27 @@ arIpAddress () {
 # 获得外网地址
 curltest=`which curl`
 if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-    #wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "https://www.cloudflare.com/cdn-cgi/trace" | awk -F= '/ip/{print $2}'
-    #wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "http://myip.ipip.net" | grep "当前 IP" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
-    wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
-    #wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
-    #wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=- "http://ddns.oray.com/checkip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
+    #wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- "https://www.ipip.net" | grep "IP地址" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
+    wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
+    #wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
+    #wget -T 5 -t 3 --no-check-certificate --quiet --output-document=- "http://pv.sohu.com/cityjson?ie=utf-8" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
 else
-    #curl -L --user-agent "$user_agent" -s "https://www.cloudflare.com/cdn-cgi/trace" | awk -F= '/ip/{print $2}'
-    #curl -L --user-agent "$user_agent" -s "http://myip.ipip.net" | grep "当前 IP" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
-    curl -L --user-agent "$user_agent" -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
-    #curl -L --user-agent "$user_agent" -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
-    #curl -L --user-agent "$user_agent" -s http://ddns.oray.com/checkip | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
+    #curl -L -k -s "https://www.ipip.net" | grep "IP地址" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
+    curl -L -k -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
+    #curl -L -k -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
+    #curl -L -k -s http://pv.sohu.com/cityjson?ie=utf-8 | grep -E -o '([0-9]+\.){3}[0-9]+' | head -n1 | cut -d' ' -f1
 fi
 }
 arIpAddress6 () {
 # IPv6地址获取
 # 因为一般ipv6没有nat ipv6的获得可以本机获得
 ifconfig $(nvram get wan0_ifname_t) | awk '/Global/{print $3}' | awk -F/ '{print $1}'
-#curl -6 -s https://www.cloudflare.com/cdn-cgi/trace | awk -F= '/ip/{print $2}'
 }
-if [ "$IPv6_neighbor" != "1" ] ; then
 if [ "$IPv6" = "1" ] ; then
 arIpAddress=$(arIpAddress6)
 else
 arIpAddress=$(arIpAddress)
 fi
-else
-arIpAddress=$inet6_neighbor
-inet6_neighbor=""
-IPv6_neighbor=0
-fi
-# 根据 ip -f inet6 neighbor show 获取终端的信息，设置 ddns 解析，实现每个终端的 IPV6 动态域名
-# 参数说明：使用 @ 符号分割，①前缀名称 ②域名 ③MAC【不限大小写】
-# ④匹配关键词的ip6地址【可留空】 ⑤排除关键词的ip6地址【可留空】 ⑥手动指定ip【可留空】 
-# 下面是信号填写例子：（删除前面的#可生效）
-cat >/tmp/ip6_ddns.inf <<-\EOF
-#www@google.com@09:9B:9A:90:9F:D9@@fe80::@  # 参数填写例子
-EOF
-cat /tmp/ip6_ddns.inf | grep -v '^#'  | grep -v "^$" > /tmp/ip6_ddns_inf
-rm -f /tmp/ip6_ddns.inf
 EEE
 	chmod 755 "$ddns_script"
 fi
@@ -579,3 +512,4 @@ keep)
 	aliddns_check
 	;;
 esac
+
