@@ -9,7 +9,7 @@ include $(ROOTDIR)/user/shared/boards.mk
 PROJECT_HOME_URL="https:\/\/bitbucket.org\/padavan\/rt-n56u\/"
 PROJECT_HOME_URL_MOD="https:\/\/github.com\/hanwckf\/rt-n56u\/"
 
-LABEL_COPYRIGHT_TEXT='© 2011-2021 by晓东'
+LABEL_COPYRIGHT_TEXT='© 2011-2023 by <a href="https:\/\/iaoz.ue.org" target="blank">云月<\/a>'
 
 BOARD_PATTERN=s/ZVMODELVZ/$(CONFIG_FIRMWARE_PRODUCT_ID)/g
 COPYR_PATTERN=s/ZVCOPYRVZ/$(LABEL_COPYRIGHT_TEXT)/g
@@ -17,6 +17,7 @@ DWURL_PATTERN=s/ZVDWURLVZ/$(PROJECT_HOME_URL)/g
 DWURL_MOD_PATTERN=s/ZVMODWURLVZ/$(PROJECT_HOME_URL_MOD)/g
 
 WEBUI_NAME=n56u_ribbon_fixed
+
 
 all:
 
@@ -198,6 +199,36 @@ ifneq ($(CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS),y)
 	rm -f $(INSTALLDIR)/www/Shadowsocks.asp
 	rm -f $(INSTALLDIR)/www/Shadowsocks_action.asp
 	rm -f $(INSTALLDIR)/www/Shadowsocks_log.asp
+endif
+
+ifeq ($(CONFIG_FIRMWARE_WEBUI_HIDE_VPN),y)
+	rm -f $(INSTALLDIR)/www/vpn_clients.asp
+	rm -f $(INSTALLDIR)/www/vpncli.asp
+	rm -f $(INSTALLDIR)/www/vpnsrv.asp
+endif
+ifneq ($(CONFIG_FIRMWARE_INCLUDE_ADBYBY),y)
+	rm -f $(INSTALLDIR)/www/Advanced_adbyby.asp
+endif
+ifneq ($(CONFIG_FIRMWARE_INCLUDE_ALIDDNS),y)
+	rm -f $(INSTALLDIR)/www/Advanced_aliddns.asp
+endif
+ifneq ($(CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME),y)
+	rm -f $(INSTALLDIR)/www/Advanced_adguardhome.asp
+endif
+ifneq ($(CONFIG_FIRMWARE_INCLUDE_KOOLPROXY),y)
+	rm -f $(INSTALLDIR)/www/Advanced_koolproxy.asp
+endif
+ifneq ($(CONFIG_FIRMWARE_INCLUDE_CADDY),y)
+	rm -f $(INSTALLDIR)/www/Advanced_caddy.asp
+endif
+ifneq ($(CONFIG_FIRMWARE_INCLUDE_WYY),y)
+	rm -f $(INSTALLDIR)/www/Advanced_wyy.asp
+endif
+ifneq ($(CONFIG_FIRMWARE_INCLUDE_ZEROTIER),y)
+	rm -f $(INSTALLDIR)/www/Advanced_zerotier.asp
+endif
+ifeq ($(CONFIG_FIRMWARE_INCLUDE_FRPC)_$(CONFIG_FIRMWARE_INCLUDE_FRPS), n_n)
+	rm -f $(INSTALLDIR)/www/Advanced_frp.asp
 endif
 
 clean:
